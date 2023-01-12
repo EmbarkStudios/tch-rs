@@ -5,23 +5,28 @@ use std::io;
 use std::path::Path;
 use std::sync::Mutex;
 
+struct ImagenetConsts {
+    mean: Tensor,
+    std: Tensor,
+}
+
 lazy_static! {
-    static ref IMAGENET_MEAN: Mutex<Tensor> =
-        Mutex::new(Tensor::of_slice(&[0.485f32, 0.456, 0.406]).view((3, 1, 1)));
-    static ref IMAGENET_STD: Mutex<Tensor> =
-        Mutex::new(Tensor::of_slice(&[0.229f32, 0.224, 0.225]).view((3, 1, 1)));
+    static ref IMAGENET_CONSTANTS: Mutex<ImagenetConsts> = Mutex::new(ImagenetConsts {
+        mean: Tensor::of_slice(&[0.485f32, 0.456, 0.406]).view((3, 1, 1)),
+        std: Tensor::of_slice(&[0.229f32, 0.224, 0.225]).view((3, 1, 1))
+    });
 }
 
 pub fn normalize(tensor: &Tensor) -> Result<Tensor, TchError> {
-    let mean = IMAGENET_MEAN.lock().unwrap();
-    let std = IMAGENET_STD.lock().unwrap();
-    (tensor.to_kind(Kind::Float) / 255.0).f_sub(&mean)?.f_div(&std)
+    let imagenet_consts_lock = IMAGENET_CONSTANTS.lock().unwrap();
+    (tensor.to_kind(Kind::Float) / 255.0)
+        .f_sub(&imagenet_consts_lock.mean)?
+        .f_div(&imagenet_consts_lock.std)
 }
 
 pub fn unnormalize(tensor: &Tensor) -> Result<Tensor, TchError> {
-    let mean = IMAGENET_MEAN.lock().unwrap();
-    let std = IMAGENET_STD.lock().unwrap();
-    let tensor = (tensor.f_mul(&std)?.f_add(&mean)? * 255.0).clamp(0., 255.0).to_kind(Kind::Uint8);
+    let imagenet_consts_lock = IMAGENET_CONSTANTS.lock().unwrap();
+    let tensor = (tensor.f_mul(&imagenet_consts_lock.std)?.f_add(&imagenet_consts_lock.mean)? * 255.0).clamp(0., 255.0).to_kind(Kind::Uint8);
     Ok(tensor)
 }
 
